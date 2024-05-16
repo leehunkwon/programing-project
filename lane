@@ -1,0 +1,140 @@
+import rospy
+from sensor_msgs.msg import CompressedImage
+import cv2
+from cv_bridge import CvBridge
+import numpy as np
+from std_msgs.msg import Int32
+
+class ImageProcessor:
+    def __init__(self):
+        rospy.init_node("lane_detect_node")
+        rospy.Subscriber("/camera/rgb/image_raw/compressed", CompressedImage, self.cam_CB)
+        self.bridge = CvBridge()
+        self.img_msg = CompressedImage()
+        self.cam_flag = False
+        self.white_pub = rospy.Publisher("white_ratio", Int32, queue_size=1)
+        self.create_trackbar_flag = False
+        self.original_window = "original_image"
+        self.cropped_window = "croped_image"
+        self.L_H_Value = 0
+        self.L_S_Value = 0
+        self.L_V_Value = 0
+        self.U_H_Value = 0
+        self.U_S_Value = 0
+        self.U_V_Value = 0
+        self.L_R_Value = 0
+        self.ref_pos = 40
+
+    def cam_CB(self, msg):
+        if msg != -1:
+            self.img_msg = msg
+            self.cam_flag = True
+        else:
+            self.cam_flag = False
+
+    def create_trackbar_init(self, cv_img):
+        cv2.namedWindow(self.original_window, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(self.cropped_window, cv2.WINDOW_NORMAL)
+
+        def hsv_track(value):
+            self.L_H_Value = cv2.getTrackbarPos("Low_H", self.cropped_window)
+            self.L_S_Value = cv2.getTrackbarPos("Low_S", self.cropped_window)
+            self.L_V_Value = cv2.getTrackbarPos("Low_V", self.cropped_window)
+            self.U_H_Value = cv2.getTrackbarPos("Up_H", self.cropped_window)
+            self.U_S_Value = cv2.getTrackbarPos("Up_S", self.cropped_window)
+            self.U_V_Value = cv2.getTrackbarPos("Up_V", self.cropped_window)
+
+        def control_track(value):
+            self.L_R_Value = cv2.getTrackbarPos("Left/Right view", self.cropped_window)
+
+        # Create trackbars for HSV ranges
+        cv2.createTrackbar("Low_H", self.cropped_window, 23, 255, hsv_track)
+        cv2.createTrackbar("Low_S", self.cropped_window, 0, 255, hsv_track)
+        cv2.createTrackbar("Low_V", self.cropped_window, 197, 255, hsv_track)
+        cv2.createTrackbar("Up_H", self.cropped_window, 175, 255, hsv_track)
+        cv2.createTrackbar("Up_S", self.cropped_window, 255, 255, hsv_track)
+        cv2.createTrackbar("Up_V", self.cropped_window, 255, 255, hsv_track)
+        cv2.createTrackbar("Left/Right view", self.cropped_window, 0, 1, control_track)
+
+        self.create_trackbar_flag = True
+
+    def crop_img(self, hsv_img):
+        if self.L_R_Value != 1:
+            croped_img = hsv_img[hsv_img.shape[0] * 3 // 4 : hsv_img.shape[0], 0 : hsv_img.shape[1] // 2]
+        else:
+            croped_img = hsv_img[hsv_img.shape[0] * 3 // 4 : hsv_img.shape[0], hsv_img.shape[1] // 2 : hsv_img.shape[1]]
+        croped_img_shape = croped_img.shape[0:2]
+        return croped_img, croped_img_shape
+
+    def binary(self, croped_img):
+        bin = cv2.cvtColor(croped_img, cv2.COLOR_BGR2GRAY)
+        binary_img = np.zeros_like(bin)
+        binary_img[bin != 0] = 1
+        return binary_img
+
+    def calc_white_ratio(self, binary_img):
+        white_pixels = np.sum(binary_img)
+        total_pixels = binary_img.shape[0] * binary_img.shape[1]
+        if total_pixels == 0:
+            return 0
+        white_ratio = white_pixels / total_pixels * 100
+        white_ratio_int = int(white_ratio)
+        self.white_pub.publish(white_ratio_int)
+        return white_ratio
+
+    def run(self):
+        if self.cam_flag:
+            img_msg = self.img_msg
+            cv_img = self.bridge.compressed_imgmsg_to_cv2(img_msg)
+
+            if not self.create_trackbar_flag:
+                self.create_trackbar_init(cv_img)
+
+            try:
+                cvt_hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+                lower = np.array([self.L_H_Value, self.L_S_Value, self.L_V_Value])
+                upper = np.array([self.U_H_Value, self.U_S_Value, self.U_V_Value])
+                mask = cv2.inRange(cvt_hsv, lower, upper)
+                hsv_img = cv2.bitwise_and(cv_img, cv_img, mask=mask)
+
+                croped_img, croped_img_shape = self.crop_img(hsv_img)
+                binary_img = self.binary(croped_img)
+                white_ratio = self.calc_white_ratio(binary_img)
+
+                print("white_ratio:", white_ratio)
+            except Exception as e:
+                print(f"Error occurred: {e}, switching to lane3 method")
+                white_ratio = self.lane3_process(cv_img)
+                print("white_ratio (lane3):", white_ratio)
+
+            cv2.imshow("orig", cv_img)
+            cv2.imshow("hsv", hsv_img)
+            cv2.imshow("cropped", croped_img)
+            cv2.waitKey(1)
+
+    def lane3_process(self, cv_img):
+        try:
+            cvt_hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+            lower = np.array([0, 0, 0])
+            upper = np.array([255, 255, 255])
+            mask = cv2.inRange(cvt_hsv, lower, upper)
+            hsv_img = cv2.bitwise_and(cv_img, cv_img, mask=mask)
+            croped_img, croped_img_shape = self.crop_img(hsv_img)
+            binary_img = self.binary(croped_img)
+            white_ratio = self.calc_white_ratio(binary_img)
+            return white_ratio
+        except Exception as e:
+            print(f"Error in lane3_process: {e}")
+            return 0
+
+def main():
+    try:
+        image_processor = ImageProcessor()
+        while not rospy.is_shutdown():
+            image_processor.run()
+    except KeyboardInterrupt:
+        print("Shutting down")
+        cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
