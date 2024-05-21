@@ -93,6 +93,20 @@ class ImageProcessor:  # 1단계: 클래스 이름 정의
         white_ratio_int = int(white_ratio)  # 실수를 정수로 변환
         self.white_pub.publish(white_ratio_int)  # 정수로 변환된 값 발행
         return white_ratio
+
+    def calc_right_distance(self, b_image):
+        b_image = self.binary(b_image)
+        try:
+            M = cv2.moments(b_image)
+            self.x = int(M['m10']/M['m00'])
+            self.y = int(M['m01']/M['m00'])
+        except:
+            self.x = 0
+            self.y = 0
+        # print("x, y = {}, {}".format(x, y))
+        print("x = {}".format(self.x))
+        self.left_pub.publish(self.x)
+        return self.x
         
 
     def crop_img(self, hsv_img):
