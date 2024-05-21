@@ -48,6 +48,14 @@ class ImageProcessor:  # 1단계: 클래스 이름 정의
         self.U_S_Value2 = 0
         self.U_V_Value2 = 0
 
+        # 두 번째 첫 번째 HSV 범위를 조정하는 트랙바의 초기값을 설정하는 변수 초기화
+        self.L_H_Value3 = 0
+        self.L_S_Value3 = 0
+        self.L_V_Value3 = 0
+        self.U_H_Value3 = 0
+        self.U_S_Value3 = 0
+        self.U_V_Value3 = 0
+
         self.L_R_Value = 0  # 좌측 또는 우측 뷰 선택을 나타내는 값을 초기화합니다.
         self.create_trackbar_flag = False  # 트랙바를 생성했는지 여부를 나타내는 플래그를 초기화합니다.
         self.original_window = "original_image"
@@ -134,7 +142,7 @@ class ImageProcessor:  # 1단계: 클래스 이름 정의
             self.U_V_Value2 = cv2.getTrackbarPos("Up_V_2", self.cropped_window)
 
         # 세 번째 트랙바 그룹을 위한 콜백 함수
-        def hsv_track_group2(value):
+        def hsv_track_group3(value):
             # 트랙바 값이 변경될 때 호출되는 콜백 함수입니다. HSV 범위 트랙바의 현재 값을 업데이트합니다.
             self.L_H_Value3 = cv2.getTrackbarPos("Low_H_3", self.cropped_window)
             self.L_S_Value3 = cv2.getTrackbarPos("Low_S_3", self.cropped_window)
