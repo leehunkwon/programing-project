@@ -186,12 +186,12 @@ class ImageProcessor:  # 1단계: 클래스 이름 정의
         cv2.createTrackbar("Up_V_2", self.cropped_window, 255, 255, hsv_track_group2)
 
          # 세 번째 트랙바 그룹 생성
-        cv2.createTrackbar("Low_H_3", self.cropped_window, 97, 255, hsv_track_group2)
-        cv2.createTrackbar("Low_S_3", self.cropped_window, 0, 255, hsv_track_group2)
-        cv2.createTrackbar("Low_V_3", self.cropped_window, 108, 255, hsv_track_group2)
-        cv2.createTrackbar("Up_H_3", self.cropped_window, 255, 255, hsv_track_group2)
-        cv2.createTrackbar("Up_S_3", self.cropped_window, 255, 255, hsv_track_group2)
-        cv2.createTrackbar("Up_V_3", self.cropped_window, 255, 255, hsv_track_group2)
+        cv2.createTrackbar("Low_H_3", self.cropped_window, 97, 255, hsv_track_group3)
+        cv2.createTrackbar("Low_S_3", self.cropped_window, 0, 255, hsv_track_group3)
+        cv2.createTrackbar("Low_V_3", self.cropped_window, 108, 255, hsv_track_group3)
+        cv2.createTrackbar("Up_H_3", self.cropped_window, 255, 255, hsv_track_group3)
+        cv2.createTrackbar("Up_S_3", self.cropped_window, 255, 255, hsv_track_group3)
+        cv2.createTrackbar("Up_V_3", self.cropped_window, 255, 255, hsv_track_group3)
         
         # cv2.createTrackbar("Left/Right view", self.cropped_window, 0, 1, hsv_track)  # 좌/우 뷰 선택 트랙바 생성
         #cv2.createTrackbar("Stop/Go", self.control_window, 0, 1, control_track)  # 정지/주행 트랙바 생성
