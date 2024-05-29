@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+
+import rospy
+import cv2
+import numpy as np
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+
+class LineCenterDetector:
+    def __init__(self):
+        self.bridge = CvBridge()
+        self.image_sub = rospy.Subscriber("/camera/image_raw", Image, self.image_callback)
+        self.image_pub = rospy.Publisher("/camera/image_processed", Image, queue_size=10)
+
+    def image_callback(self, data):
+        # Convert ROS Image message to OpenCV image
+        cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+
+        # Process image to find lines and their center
+        processed_image = self.process_image(cv_image)
+
+        # Convert OpenCV image back to ROS Image message
+        image_message = self.bridge.cv2_to_imgmsg(processed_image, "bgr8")
+
+        # Publish processed image
+        self.image_pub.publish(image_message)
+
+    def process_image(self, image):
+        # Convert image to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Apply Gaussian blur to the grayscale image
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply edge detection
+        edges = cv2.Canny(blurred, 50, 150)
+
+        # Define region of interest (ROI) if necessary
+        height, width = edges.shape
+        mask = np.zeros_like(edges)
+        roi_corners = np.array([[
+            (0, height),
+            (0, height // 2),
+            (width, height // 2),
+            (width, height)
+        ]], dtype=np.int32)
+        cv2.fillPoly(mask, roi_corners, 255)
+        masked_edges = cv2.bitwise_and(edges, mask)
+
+        # Detect lines using Hough Transform
+        lines = cv2.HoughLinesP(masked_edges, 1, np.pi / 180, 50, minLineLength=50, maxLineGap=150)
+
+        if lines is not None:
+            # Draw lines and find center points
+            left_lines = []
+            right_lines = []
+            for line in lines:
+                for x1, y1, x2, y2 in line:
+                    slope = (y2 - y1) / (x2 - x1)
+                    if slope < 0:
+                        left_lines.append(line)
+                    else:
+                        right_lines.append(line)
+
+            left_line_center = self.calculate_center(left_lines)
+            right_line_center = self.calculate_center(right_lines)
+
+            if left_line_center and right_line_center:
+                center_x = (left_line_center[0] + right_line_center[0]) // 2
+                center_y = (left_line_center[1] + right_line_center[1]) // 2
+                cv2.circle(image, (center_x, center_y), 5, (0, 0, 255), -1)
+
+        return image
+
+    def calculate_center(self, lines):
+        if not lines:
+            return None
+        x_coords = []
+        y_coords = []
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                x_coords.append(x1)
+                x_coords.append(x2)
+                y_coords.append(y1)
+                y_coords.append(y2)
+        center_x = sum(x_coords) // len(x_coords)
+        center_y = sum(y_coords) // len(y_coords)
+        return (center_x, center_y)
+
+if __name__ == '__main__':
+    rospy.init_node('line_center_detector')
+    lcd = LineCenterDetector()
+    rospy.spin()
