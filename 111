@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rospy
+from sensor_msgs.msg import CompressedImage
+import cv2
+from cv_bridge import CvBridge
+import numpy as np
+from std_msgs.msg import Int32
+
+class ImageProcessor:
+    def __init__(self):
+        rospy.init_node("lane_detect_node")
+
+        rospy.Subscriber("/camera/rgb/image_raw/compressed", CompressedImage, self.cam_CB)
+        self.left_pub = rospy.Publisher("left_x", Int32, queue_size=1)
+
+        self.bridge = CvBridge()
+        self.img_msg = CompressedImage()
+        self.cam_flag = False
+
+        self.L_H_Value = 0
+        self.L_S_Value = 0
+        self.L_V_Value = 109
+        self.U_H_Value = 186
+        self.U_S_Value = 255
+        self.U_V_Value = 255
+        self.L_R_Value = 0
+        self.create_trackbar_flag = False
+        self.original_window = "original_image"
+        self.cropped_window = "cropped_image"
+        self.ref_pos = 40
+
+    def cam_CB(self, msg):
+        if msg != -1:
+            self.img_msg = msg
+            self.cam_flag = True
+        else:
+            self.cam_flag = False
+
+    def calc_lane_center(self, b_image):
+        # 노란색 차선을 추출하기 위한 마스크 생성
+        yellow_mask = cv2.inRange(b_image, (20, 20, 0), (255, 255, 30))
+        # 흰색 차선을 추출하기 위한 마스크 생성
+        white_mask = cv2.inRange(b_image, (50, 50, 10), (255, 255, 255))
+        # 노란색과 흰색 마스크를 합침
+        mask = cv2.bitwise_or(yellow_mask, white_mask)
+
+        # 마스크 이미지 디버깅 출력
+        cv2.imshow("Mask", mask)
+        cv2.waitKey(1)
+
+        height, width = mask.shape[:2]
+        y_center = height // 2
+
+        yellow_coord = -1
+        white_coord = -1
+
+        for x in range(width):
+            if yellow_coord == -1 and mask[y_center, x] > 0:
+                yellow_coord = x
+            if white_coord == -1 and mask[y_center, width - x - 1] > 0:
+                white_coord = width - x - 1
+            if yellow_coord != -1 and white_coord != -1:
+                break
+
+        # 좌표 값 디버깅 출력
+        print("Yellow Coord: {}, White Coord: {}".format(yellow_coord, white_coord))
+
+        if yellow_coord != -1 and white_coord != -1:
+            lane_center = (yellow_coord + white_coord) // 2
+        else:
+            lane_center = 0
+
+        print("Lane center x = {}".format(lane_center))
+        self.left_pub.publish(lane_center)
+        return lane_center
+
+    def crop_img(self, hsv_img):
+        cropped_img = hsv_img[hsv_img.shape[0] * 3 // 4 : hsv_img.shape[0], 0 : hsv_img.shape[1]]
+        return cropped_img
+
+    def create_trackbar_init(self, cv_img):
+        cv2.namedWindow(self.original_window, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(self.cropped_window, cv2.WINDOW_NORMAL)
+
+        def hsv_track(value):
+            self.L_H_Value = cv2.getTrackbarPos("Low_H", self.cropped_window)
+            self.L_S_Value = cv2.getTrackbarPos("Low_S", self.cropped_window)
+            self.L_V_Value = cv2.getTrackbarPos("Low_V", self.cropped_window)
+            self.U_H_Value = cv2.getTrackbarPos("Up_H", self.cropped_window)
+            self.U_S_Value = cv2.getTrackbarPos("Up_S", self.cropped_window)
+            self.U_V_Value = cv2.getTrackbarPos("Up_V", self.cropped_window)
+            self.L_R_Value = cv2.getTrackbarPos("view", self.cropped_window)
+
+        cv2.createTrackbar("Low_H", self.cropped_window, self.L_H_Value, 255, hsv_track)
+        cv2.createTrackbar("Low_S", self.cropped_window, self.L_S_Value, 255, hsv_track)
+        cv2.createTrackbar("Low_V", self.cropped_window, self.L_V_Value, 255, hsv_track)
+        cv2.createTrackbar("Up_H", self.cropped_window, self.U_H_Value, 255, hsv_track)
+        cv2.createTrackbar("Up_S", self.cropped_window, self.U_S_Value, 255, hsv_track)
+        cv2.createTrackbar("Up_V", self.cropped_window, self.U_V_Value, 255, hsv_track)
+        cv2.createTrackbar("view", self.cropped_window, self.L_R_Value, 1, hsv_track)
+        self.create_trackbar_flag = True
+
+    def run(self):
+        if self.cam_flag:
+            img_msg = self.img_msg
+            cv_img = self.bridge.compressed_imgmsg_to_cv2(img_msg)
+            if not self.create_trackbar_flag:
+                self.create_trackbar_init(cv_img)
+
+            cvt_hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+            lower = np.array([self.L_H_Value, self.L_S_Value, self.L_V_Value])
+            upper = np.array([self.U_H_Value, self.U_S_Value, self.U_V_Value])
+            mask = cv2.inRange(cvt_hsv, lower, upper)
+            hsv_img = cv2.bitwise_and(cv_img, cv_img, mask=mask)
+
+            cropped_img = self.crop_img(hsv_img)
+
+            pos_lane = self.calc_lane_center(cropped_img)
+
+            print(pos_lane)
+            cv2.circle(cropped_img, (pos_lane, cropped_img.shape[0] // 2 ), 3, (0, 255, 0), -1)
+
+            cv2.imshow(self.original_window, cv_img)
+            cv2.imshow(self.cropped_window, cropped_img)
+            cv2.waitKey(1)
+
+def main():
+    try:
+        image_processor = ImageProcessor()
+        while not rospy.is_shutdown():
+            image_processor.run()
+    except KeyboardInterrupt:
+        print("Shutting down")
+        cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
