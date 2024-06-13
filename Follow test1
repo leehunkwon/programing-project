@@ -28,7 +28,7 @@ class OBS_Control:
         self.dist90L = 0.5
         self.dist75R = 0.5
         self.dist75L = 0.5
-        self.wall_dist = 0.2
+        self.wall_dist = 0.5
         self.kp = 0.01
         self.pre_steer = 0
 
@@ -44,17 +44,17 @@ class OBS_Control:
         self.dist75L = data.data
     def obsR_CB(self, data):
         self.obsR = data.data
-    def obsL_CB(self, data
+    def obsL_CB(self, data):
         self.obsL = data.data
     def obsC_CB(self, data):
         self.obsC = data.data
     def control(self):
         # 기본 속도 및 조향 각도 초기화
-        speed = 0
+        speed = 0.3
         steer = 0
 
         if not self.obsC and self.obsR:  # 오른쪽 벽 따라가기
-            speed = 0.2
+            speed = 0.35
             if self.dist90R == 0:
                 speed = 0.0
                 steer = self.pre_steer
@@ -67,18 +67,22 @@ class OBS_Control:
                     value = -1
 
                 theta = math.acos(value) * 180 / math.pi
-                rospy.loginfo(f'theta: {theta}')
+                rospy.loginfo('theta: %s', theta)
                 steer = (15 - theta) * math.pi / 180 + self.kp * (self.wall_dist - self.dist90R)
-                rospy.loginfo(f'steer: {steer}')
+                rospy.loginfo('steer: %s', steer)
             rospy.loginfo('Following the wall on the right side')
-        elif self.obsC and self.obsR and self.obsL:  # 모든 방향에 장애물 존재 시 정지
-            speed = 0
-            steer = 0
-            rospy.loginfo('Stop due to obstacles on all sides')
-        elif self.obsC and self.obsR:  # 왼쪽으로 회전
-            speed = 0.1
-            steer = 0.1
+        #elif self.obsC and self.obsR and self.obsL:  # 모든 방향에 장애물 존재 시 정지
+            #speed = 0
+            #steer = 0
+            #rospy.loginfo('Stop due to obstacles on all sides')
+        elif self.obsC and self.obsR and not self.obsL:  # 왼쪽으로 회전
+            speed = 0.35
+            steer = 20
             rospy.loginfo('Turning left')
+        elif self.obsC and self.obsL and not self.obsR:  
+            speed = 0.35
+            steer = -20
+            rospy.loginfo('Turning right')
         else:
             rospy.loginfo('No specific condition met')
 
