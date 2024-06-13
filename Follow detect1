@@ -63,34 +63,34 @@ class Obs_detect:  # 클래스 이름 정의
                 print(self.degrees)
             if self.degrees_flag == True:
                 for i, n in enumerate(curren_laser.ranges):
-                    # if 5 < self.degrees[i] < 30:
-                    #     print('test',n)
+                    #if 5 < self.degrees[i] < 30:
+                    #   print('test',n)
 
                     ## x, y 좌표로 변환
                     x = n * math.cos(self.degrees[i] * math.pi / 180)
-                    y = n * math.sin(self.4degrees[i] * math.pi / 180)              
+                    y = n * math.sin(self.degrees[i] * math.pi / 180)              
                     # right obstacle detection
-                    if 0.15 < y < 0.45 and 0 < x < 0.5:
+                    if 0.1 < y < 0.4 and 0 < x < 0.4:
                         pub_obs_L_list.append(n)
                     # front obstacle detectionself.ranges
-                    if -0.15 < y < 0.15 and 0 < x < 0.5:
+                    if -0.1 < y < 0.1 and 0 < x < 0.65:
                         pub_obs_C_list.append(n)
                     # left obstacle detection
-                    if -0.45 < y < -0.15 and 0 < x < 0.5:
+                    if -0.5 < y < -0.1 and 0 < x < 0.5:
                         pub_obs_R_list.append(n)
                     
                     # 오른쪽 90도 거리 저장
                     if 0 < n < 0.5 and -91 < self.degrees[i] < -89:
                         pub_dist90_R_lsit.append(n)
                     # 오른쪽 75도 거리 저장
-                    if 0 < n < 0.5 and -76 < self.degrees[i] < -75:
+                    if 0 < n < 0.5 and -76 < self.degrees[i] < -74:
                         pub_dist75_R_list.append(n)
                     
                     # # 왼쪽 90도 거리 저장
                     if 0 < n < 0.5 and 89 < self.degrees[i] < 91:
                         pub_dist90_L_lsit.append(n)
                     # 왼쪽 75도 거리 저장
-                    if 0 < n < 0.5 and 7 < self.degrees[i] < 76:
+                    if 0 < n < 0.5 and 74 < self.degrees[i] < 76:
                         pub_dist75_L_lsit.append(n)
                                             
                 if len(pub_dist90_R_lsit) > 0:
@@ -120,21 +120,21 @@ class Obs_detect:  # 클래스 이름 정의
                     self.pub_dist75_L.publish(0.5)
                     print("dist75_L: ", 0.5)
 
-                if len(pub_obs_R_list) > 5:
+                if len(pub_obs_R_list) > 2:
                     self.pub_obs_R.publish(True)
                     print("obs_R: ", True)
                 else:
                     self.pub_obs_R.publish(False)
                     print("obs_R: ", False)
 
-                if len(pub_obs_C_list) > 5:
+                if len(pub_obs_C_list) > 1:
                     self.pub_obs_C.publish(True)
-                    # print("obs_C: ", True)
+                    print("obs_C: ", True)
                 else:
                     self.pub_obs_C.publish(False)
-                    # print("obs_C: ", False)
+                    print("obs_C: ", False)
 
-                if len(pub_obs_L_list) > 5:
+                if len(pub_obs_L_list) > 3:
                     self.pub_obs_L.publish(True)
                     print("obs_L: ", True)
                 else:
