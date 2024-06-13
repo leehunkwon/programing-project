@@ -1,10 +1,110 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rospy
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Int32, Bool
+import math
+import statistics
+
+class LaserProcessor:
+    def __init__(self):
+        rospy.init_node("obs_detect_node")
+
+        rospy.Subscriber("/scan", LaserScan, self.lidar_CB)
+
+        self.pub_dist90_R = rospy.Publisher("/dist90R", Int32, queue_size=1)
+        self.pub_dist90_L = rospy.Publisher("/dist90L", Int32, queue_size=1)
+        self.pub_dist45_R = rospy.Publisher("/dist45R", Int32, queue_size=1)
+        self.pub_dist45_L = rospy.Publisher("/dist45L", Int32, queue_size=1)
+        self.pub_obs_R = rospy.Publisher("/obsR", Bool, queue_size=1)
+        self.pub_obs_L = rospy.Publisher("/obsL", Bool, queue_size=1)
+        self.pub_obs_C = rospy.Publisher("/obsC", Bool, queue_size=1)
+
+        self.laser_msg = None
+        self.rate = rospy.Rate(10)
+        self.degrees = []
+        self.degrees_flag = False
+
+    def lidar_CB(self, msg):
+        self.laser_msg = msg
+
+    def process_lidar(self):
+        if self.laser_msg is None:
+            return
+
+        pub_dist90_R_list = []
+        pub_dist90_L_list = []
+        pub_dist45_R_list = []
+        pub_dist45_L_list = []
+        pub_obs_R_list = []
+        pub_obs_L_list = []
+        pub_obs_C_list = []
+
+        if not self.degrees_flag:
+            for i in range(len(self.laser_msg.ranges)):
+                angle = (self.laser_msg.angle_min + self.laser_msg.angle_increment * i) * 180 / math.pi
+                self.degrees.append(angle)
+            self.degrees_flag = True
+
+        for i, n in enumerate(self.laser_msg.ranges):
+            x = n * math.cos(self.degrees[i] * math.pi / 180)
+            y = n * math.sin(self.degrees[i] * math.pi / 180)
+
+            if 0.15 < y < 0.45 and 0 < x < 0.5:
+                pub_obs_R_list.append(n)
+            if -0.15 < y < 0.15 and 0 < x < 0.5:
+                pub_obs_C_list.append(n)
+            if -0.45 < y < -0.15 and 0 < x < 0.5:
+                pub_obs_L_list.append(n)
+
+            if 0 < n < 0.5 and -91 < self.degrees[i] < -89:
+                pub_dist90_R_list.append(n)
+            if 0 < n < 0.5 and -46 < self.degrees[i] < -44:
+                pub_dist45_R_list.append(n)
+            if 0 < n < 0.5 and 89 < self.degrees[i] < 91:
+                pub_dist90_L_list.append(n)
+            if 0 < n < 0.5 and 44 < self.degrees[i] < 46:
+                pub_dist45_L_list.append(n)
+
+        self.publish_data(pub_dist90_R_list, self.pub_dist90_R)
+        self.publish_data(pub_dist45_R_list, self.pub_dist45_R)
+        self.publish_data(pub_dist90_L_list, self.pub_dist90_L)
+        self.publish_data(pub_dist45_L_list, self.pub_dist45_L)
+
+        self.publish_boolean(pub_obs_R_list, self.pub_obs_R)
+        self.publish_boolean(pub_obs_C_list, self.pub_obs_C)
+        self.publish_boolean(pub_obs_L_list, self.pub_obs_L)
+
+    def publish_data(self, data_list, publisher):
+        if data_list:
+            publisher.publish(int(statistics.mean(data_list) * 100))
+        else:
+            publisher.publish(50)
+
+    def publish_boolean(self, data_list, publisher):
+        if len(data_list) > 3:
+            publisher.publish(True)
+        else:
+            publisher.publish(False)
+
+    def run(self):
+        while not rospy.is_shutdown():
+            self.process_lidar()
+            self.rate.sleep()
+
+if __name__ == "__main__":
+    processor = LaserProcessor()
+    processor.run()
+
+
+
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import rospy
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Int32
-from std_msgs.msg import Bool
+from std_msgs.msg import Int32, Bool
 import math
 
 class OBS_Control:
@@ -36,21 +136,16 @@ class OBS_Control:
         self.rate = rospy.Rate(2)
 
     def dist90R_CB(self, data):
-        self.dist90R = data.data
-        print('self.dist90R', self.dist90R)
+        self.dist90R = data.data / 100.0
 
     def dist45R_CB(self, data):
-        self.dist45R = data.data
+        self.dist45R = data.data / 100.0
 
     def dist90L_CB(self, data):
-        self.dist90L = data.data
-        print('self.dist90L', self.dist90L)
+        self.dist90L = data.data / 100.0
 
     def dist45L_CB(self, data):
-        self.dist45L = data.data    
-
-    def dist45L_CB(self, data):
-        self.dist45L = data.data
+        self.dist45L = data.data / 100.0
 
     def obsR_CB(self, data):
         self.obsR = data.data
@@ -58,28 +153,24 @@ class OBS_Control:
     def obsL_CB(self, data):
         self.obsL = data.data
 
-    def obsC_CB(self, data):    
+    def obsC_CB(self, data):
         self.obsC = data.data
 
     def control(self):
         # 왼쪽과 오른쪽 거리의 평균으로 조향각을 계산
         avg_dist = (self.dist90R + self.dist90L) / 2.0
         value = avg_dist / self.wall_dist
-        print('avg_dist:', avg_dist)
-        
+
         if value > 1:
             value = 1
         elif value < -1:
             value = -1
-        
+
         theta = math.acos(value) * 180 / math.pi
         if theta < 15:
             steer = 0
         else:
             steer = (15 - theta) * math.pi / 180 + self.kp * (self.wall_dist - avg_dist)
-            print('theta:', theta)
-            print('steer:', steer)
-            print('벽')
 
         # 왼쪽 벽이나 오른쪽 벽 중 하나만 인식되는 경우 반대 방향으로 주행
         if self.obsR and self.obsC and not self.obsL:
@@ -87,7 +178,6 @@ class OBS_Control:
         elif self.obsL and self.obsC and not self.obsR:
             steer = -2
         else:
-            print('조건 없음')
             speed = 0
             steer = 0
 
@@ -101,144 +191,6 @@ def main():
     while not rospy.is_shutdown():
         OBS_driving.control()
         OBS_driving.rate.sleep()
-
-if __name__ == "__main__":
-    main()
-
-
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-import rospy
-from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist
-from std_msgs.msg import Int32, Bool
-import math
-#import statistics
-
-class Class_Name:
-    def __init__(self):
-        rospy.init_node("obs_detect_node")
-
-        rospy.Subscriber("/scan", LaserScan, self.lidar_CB)
-
-        self.pub_dist90_R = rospy.Publisher("/dist90R", Int32, queue_size=1)
-        self.pub_dist90_L = rospy.Publisher("/dist90L", Int32, queue_size=1)
-        self.pub_dist45_R = rospy.Publisher("/dist45R", Int32, queue_size=1)
-        self.pub_dist45_L = rospy.Publisher("/dist45L", Int32, queue_size=1)
-        self.pub_obs_R = rospy.Publisher("/obsR", Bool, queue_size=1)
-        self.pub_obs_L = rospy.Publisher("/obsL", Bool, queue_size=1)
-        self.pub_obs_C = rospy.Publisher("/obsC", Bool, queue_size=1)
-
-        self.laser_msg = LaserScan()
-        self.rate = rospy.Rate(10)
-        self.laser_flag = False
-        self.degrees = []
-        self.degrees_flag = False
-        self.ctrl_msg = Twist()  # Twist 메시지 초기화
-
-    def lidar_CB(self, msg):
-        if msg:  # 유효한 메시지가 들어왔을 경우:
-            self.laser_msg = msg
-            self.laser_flag = True
-        else:
-            self.laser_flag = False
-
-    def sense(self):
-        pub_dist90_R_list = []
-        pub_dist90_L_list = []
-        pub_dist45_R_list = []
-        pub_dist45_L_list = []
-        pub_obs_R_list = []
-        pub_obs_L_list = []
-        pub_obs_C_list = []
-
-        if self.laser_flag:
-            if not self.degrees_flag:
-                for i in range(len(self.laser_msg.ranges)):
-                    angle = (self.laser_msg.angle_min + self.laser_msg.angle_increment * i) * 180 / math.pi
-                    self.degrees.append(angle)
-                self.degrees_flag = True
-
-            for i, n in enumerate(self.laser_msg.ranges):  # self.laser_msg.ranges 사용
-                x = n * math.cos(self.degrees[i] * math.pi / 180)
-                y = n * math.sin(self.degrees[i] * math.pi / 180)
-
-                if 0.15 < y < 0.45 and 0 < x < 0.5:
-                    pub_obs_R_list.append(n)
-                if -0.15 < y < 0.15 and 0 < x < 0.5:
-                    pub_obs_C_list.append(n)
-                if -0.45 < y < -0.15 and 0 < x < 0.5:
-                    pub_obs_L_list.append(n)
-
-                if 0 < n < 0.5 and -91 < self.degrees[i] < -89:
-                    pub_dist90_R_list.append(n)
-                if 0 < n < 0.5 and -46 < self.degrees[i] < -44:
-                    pub_dist45_R_list.append(n)
-                if 0 < n < 0.5 and 89 < self.degrees[i] < 91:
-                    pub_dist90_L_list.append(n)
-                if 0 < n < 0.5 and 44 < self.degrees[i] < 46:
-                    pub_dist45_L_list.append(n)
-
-            if pub_dist90_R_list:
-                self.pub_dist90_R.publish(int(statistics.mean(pub_dist90_R_list) * 100))
-            else:
-                self.pub_dist90_R.publish(50)
-            if pub_dist45_R_list:
-                self.pub_dist45_R.publish(int(statistics.mean(pub_dist45_R_list) * 100))
-            else:
-                self.pub_dist45_R.publish(50)
-            if pub_dist90_L_list:
-                self.pub_dist90_L.publish(int(statistics.mean(pub_dist90_L_list) * 100))
-            else:
-                self.pub_dist90_L.publish(50)
-            if pub_dist45_L_list:
-                self.pub_dist45_L.publish(int(statistics.mean(pub_dist45_L_list) * 100))
-            else:
-                self.pub_dist45_L.publish(50)
-
-            if len(pub_obs_R_list) > 3:
-                self.pub_obs_R.publish(True)
-            else:
-                self.pub_obs_R.publish(False)
-            if len(pub_obs_C_list) > 3:
-                self.pub_obs_C.publish(True)
-            else:
-                self.pub_obs_C.publish(False)
-            if len(pub_obs_L_list) > 3:
-                self.pub_obs_L.publish(True)
-            else:
-                self.pub_obs_L.publish(False)
-
-    def think(self, degrees):
-        object_degrees = []
-        for i, value in enumerate(self.laser_msg.ranges):
-            if 0 < value < 0.30 and abs(degrees[i]) < 30:
-                object_degrees.append(degrees[i])
-        if len(object_degrees) > 3:
-            motion = "STOP"
-        else:
-            motion = "GO"
-        return motion
-
-    def act(self, motion):
-        if motion == "STOP":
-            speed = 0
-        else:
-            speed = 1
-        self.ctrl_msg.linear.x = speed
-        self.pub.publish(self.ctrl_msg)
-
-    def run(self):
-        if self.laser_flag:
-            self.sense()
-
-def main():
-    class_name = Class_Name()
-    while not rospy.is_shutdown():
-        class_name.run()
-        class_name.rate.sleep()  # 루프의 각 반복에서 sleep 추가
 
 if __name__ == "__main__":
     main()
